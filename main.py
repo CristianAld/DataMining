@@ -6,6 +6,8 @@ import csv
 from collections import Counter, defaultdict
 import pandas as pd
 from io import StringIO # Used for reading CSV content as a file-like object
+import os
+import psutil
 
 
 PRODUCTS = [
@@ -33,6 +35,8 @@ class SupermarketApp:
 
         ttk.Separator(master, orient='horizontal').pack(fill='x', pady=10)
         
+        self.setup_recommendation_controls()
+
         self.frame_main = tk.Frame(master)
         self.frame_main.pack(fill='both', expand=True)
 
@@ -54,6 +58,7 @@ class SupermarketApp:
         # Initial display update
         self.update_basket_display()
         self.render_transactions_table()
+
 
     
     def setup_import_section(self):
@@ -163,6 +168,7 @@ class SupermarketApp:
         
         if success:
             self.render_transactions_table()
+            self.update_product_dropdown()
             total_transactions = len(all_transactions)
             
             status_text = f"Imported {imported_count} transactions. (Total: {total_transactions} loaded)."
@@ -170,8 +176,14 @@ class SupermarketApp:
                  status_text += f" {error_count} lines skipped (errors/empty)."
             
             self.import_status_label.config(text=status_text, fg='darkgreen')
+        
+            try:
+                self.compare_performance(min_support=0.2, min_confidence=0.5)
+            except Exception as e:
+                print(f"Algorithm execution failed: {e}")
+
         else:
-            self.import_status_label.config(text=f"❌ Import failed. {imported_count}", fg='red')
+            self.import_status_label.config(text=f"Import failed. {imported_count}", fg='red')
 
 
     def _parse_csv_data(self, filepath):
@@ -296,7 +308,6 @@ class SupermarketApp:
 
     def render_transactions_table(self):
         """Clears and re-populates the transaction Treeview widget."""
-        # Clear existing data
         for item in self.transactions_tree.get_children():
             self.transactions_tree.delete(item)
 
@@ -314,19 +325,20 @@ class SupermarketApp:
         """
         try:
             # Load the inventory CSV. We assume 'product_name' is in the second column (index 1) 
-            # after the header row. We rely on the header being present in the first row.
             df_inventory = pd.read_csv(filepath, encoding='utf-8')
             
             # --- Standardize and Collect Product Names ---
-            # 1. Access the 'product_name' column (or second column if no header)
-            # 2. Convert all product names to lowercase and strip whitespace
+            # Access the 'product_name' column (or second column if no header)
+            # Convert all product names to lowercase and strip whitespace
             valid_names = df_inventory.iloc[:, 1].astype(str).str.strip().str.lower()
 
             # Populate the class set with unique, standardized names
             self.VALID_PRODUCTS_SET = set(valid_names)
 
             print(f"Loaded {len(self.VALID_PRODUCTS_SET)} unique valid products for validation.")
-        
+            if hasattr(self, 'product_choice'):
+                self.update_product_dropdown()
+
         except FileNotFoundError:
             messagebox.showerror("Error", f"Product Inventory file '{filepath}' not found. Cannot validate transactions.")
         except Exception as e:
@@ -377,23 +389,6 @@ class SupermarketApp:
 
     # --APRIORI ALGORITHM IMPLEMENTATION--
 
-    # Data encoding
-    def encode_data(transaction_items):
-        """Encodes transactions for faster lookup and returns total count."""
-        
-        # dictionary to map items to transaction IDs (vertical format)
-        item_transaction_map = {}
-        
-        for t_id, items in enumerate(transaction_items):
-            for item in items:
-                if item not in item_transaction_map:
-                    item_transaction_map[item] = set()
-                item_transaction_map[item].add(t_id)
-                
-        total_transactions = len(transaction_items)
-        return item_transaction_map, total_transactions
-    
-    # Apriori Algorithm implementation
     def _apriori_gen(self, Lk_minus_1):
         """Generates candidate k-itemsets (Ck) from frequent (k-1)-itemsets (Lk-1)."""
         Ck = set()
@@ -431,21 +426,20 @@ class SupermarketApp:
         Executes the Apriori algorithm with simplified core logic using TID-sets 
         for fast support counting.
         """
-        
         transaction_items = [t['items'] for t in all_transactions]
         if not transaction_items:
             return None, "No transactions available."
 
-        # Performance Tracking Setup (omitted for brevity, assume it's here)
-        start_time = time.time() 
-        # ...
+        process = psutil.Process(os.getpid())
+        start_time = time.time()
+        start_memory = process.memory_info().rss
 
-        # 1. Vertical Data Format Preparation (Used for Efficient Counting)
+        # vertical Data Format Preparation (Used for Efficient Counting)
         item_transaction_map, N = self._encode_data_vertical(transaction_items)
         min_support_count = min_support_ratio * N
         frequent_itemsets = {} 
 
-        # 2. L1 (Frequent 1-Itemsets)
+        # L1 (Frequent 1-Itemsets)
         L1 = set()
         for item, tids in item_transaction_map.items():
             support = len(tids)
@@ -456,39 +450,35 @@ class SupermarketApp:
         
         Lk_minus_1 = L1
         
-        # 3. Iterative Generation Lk (k >= 2) - Candidate Generation and Pruning
         while Lk_minus_1:
-            # Generate candidates Ck (uses the complex Apriori pruning logic from _apriori_gen)
             Ck = self._apriori_gen(Lk_minus_1)
             Lk = set()
             
-            # Count Support for Ck using TID intersection (The simplified part)
             for candidate in Ck:
-                
-                # Find the common TID-set by intersecting the TID-sets of all single items in the set
-                # The .copy() ensures we don't modify the original TID sets
                 candidate_tids = item_transaction_map[candidate[0]].copy() 
-                
                 for item in candidate[1:]:
-                    # Intersection is much faster than iterating over all transactions
                     candidate_tids.intersection_update(item_transaction_map[item])
                 
                 support = len(candidate_tids)
                 
-                # Prune: Check if the support meets the minimum threshold
                 if support >= min_support_count:
                     Lk.add(candidate)
                     frequent_itemsets[candidate] = support
             
             Lk_minus_1 = Lk
 
-        # 4. Extract Association Rules (uses existing _apriori_rules_gen)
+        # extract Association Rules
         rules = self._apriori_rules_gen(frequent_itemsets, N, min_confidence)
         
-        # Performance Tracking Finalization (omitted for brevity)
-        # ...
+        end_time = time.time()
+        end_memory = process.memory_info().rss
         
-        performance_data = {'Algorithm': 'Apriori', 'Time (ms)': 0, 'Rules Generated': len(rules), 'Memory (MB)': 0}
+        performance_data = {
+            'Algorithm': 'Apriori', 
+            'Time (ms)': round((end_time - start_time) * 1000, 2), 
+            'Rules Generated': len(rules), 
+            'Memory (MB)': round((end_memory - start_memory) / (1024 * 1024), 2)
+        }
         return rules, performance_data
     
     def _encode_data_vertical(self, transaction_items):
@@ -503,24 +493,14 @@ class SupermarketApp:
         return item_transaction_map, len(transaction_items)
 
     def _eclat_recursive(self, prefix, tid_set_map, N, min_support_count, frequent_sets):
-        """
-        Recursive core of the Eclat algorithm using Depth-First Search.
-        
-        Args:
-            prefix (tuple): The current itemset being extended.
-            tid_set_map (dict): {item: TID-set} map for the current equivalence class.
-        """
-        
-        # Iteratively try to extend the current prefix
+
         for item_A, tid_set_A in tid_set_map.items():
             
-            # Candidate itemset is the prefix + item_A
             candidate_itemset = prefix + (item_A,)
             
             # Record the frequent itemset
             frequent_sets[candidate_itemset] = len(tid_set_A)
             
-            # Build the next equivalence class (new_tid_set_map)
             new_tid_set_map = {}
             
             # Find potential extensions (items that appear AFTER item_A in the sorted list)
@@ -555,18 +535,17 @@ class SupermarketApp:
         start_time = time.time()
         start_memory = process.memory_info().rss
         
-        # 1. Vertical Data Format Preparation (TID-sets)
+        # vertical Data Format Preparation (TID-sets)
         item_tid_sets, N = self._encode_data_vertical(transaction_items)
         min_support_count = min_support_ratio * N
         frequent_itemsets = {}
         
-        # 2. Filter L1 (Initial 1-itemsets that meet support)
         initial_tid_set_map = {
             item: tids for item, tids in item_tid_sets.items() 
             if len(tids) >= min_support_count
         }
 
-        # 3. Execute Recursive DFS
+        # executes Recursive DFS
         self._eclat_recursive(
             prefix=tuple(), 
             tid_set_map=initial_tid_set_map, 
@@ -575,7 +554,7 @@ class SupermarketApp:
             frequent_sets=frequent_itemsets
         )
 
-        # 4. Extract Association Rules (using the same Apriori rule generation logic)
+        # extract Association Rules (using the same Apriori rule generation logic)
         rules = self._apriori_rules_gen(frequent_itemsets, N, min_confidence)
         
         # Performance Tracking Finalization
@@ -614,7 +593,7 @@ class SupermarketApp:
                     # Retrieve support for the antecedent (A)
                     support_A_count = frequent_itemsets.get(antecedent)
                     
-                    if support_A_count is None: continue # Safety check
+                    if support_A_count is None: continue 
                     
                     support_A = support_A_count / N
                     
@@ -652,12 +631,10 @@ class SupermarketApp:
             messagebox.showerror("Error", "Analysis failed. Check console for details.")
             return
 
-        # 1. Create a DataFrame for easy presentation
         df_comparison = pd.DataFrame([apriori_perf, eclat_perf])
         
-        # 2. Display the Comparison (e.g., in console or a new Tkinter window)
         print("\n" + "="*50)
-        print("          ✨ ALGORITHM PERFORMANCE COMPARISON ✨")
+        print("           ALGORITHM PERFORMANCE COMPARISON ")
         print("="*50)
         print(f"Parameters: Min Support={min_support*100}%, Min Confidence={min_confidence*100}%")
         print("-" * 50)
@@ -667,6 +644,128 @@ class SupermarketApp:
         print("="*50)
         
         return df_comparison
+    
+    def setup_recommendation_controls(self):
+        """Creates ONLY the dropdown and button. Output goes to terminal."""
+        # Small frame at the bottom just for controls
+        control_frame = tk.Frame(self.master, pady=10, bd=2, relief=tk.RAISED) # Added border for visibility
+        control_frame.pack(side='bottom', fill='x')
+
+        # Label 1: Section Title
+        tk.Label(control_frame, text=" Recommendations:", font=("Arial", 10, "bold")).pack(side='left', padx=10)
+        
+        # Label 2: Explicit Instruction (This was missing)
+        tk.Label(control_frame, text="Select Product:", font=("Arial", 10)).pack(side='left', padx=5)
+
+        # Dropdown (Combobox)
+        self.product_choice = ttk.Combobox(control_frame, width=20, state="readonly")
+        self.product_choice.pack(side='left', padx=5)
+        
+        # Populate the dropdown immediately
+        self.update_product_dropdown()
+
+        # Button
+        btn_recommend = tk.Button(control_frame, text="Print Insights to Console", bg="#007BFF", fg="white", 
+                                  command=self.show_recommendations_in_terminal)
+        btn_recommend.pack(side='left', padx=10)
+        
+        # Label 3: Output Location Hint
+        tk.Label(control_frame, text="(Check Terminal for Output)", font=("Arial", 8, "italic"), fg="gray").pack(side='left')
+
+    def update_product_dropdown(self):
+        """Refreshes the product list in the recommendation dropdown."""
+        if hasattr(self, 'product_choice'):
+            if self.VALID_PRODUCTS_SET:
+                product_list = sorted(list(self.VALID_PRODUCTS_SET))
+                self.product_choice['values'] = product_list
+                self.product_choice.set(product_list[0])  # Auto-select first item
+            else:
+                self.product_choice['values'] = []
+                self.product_choice.set("No products loaded")
+
+    def show_recommendations_in_terminal(self):
+        # 1. Validation
+        selected_product = self.product_choice.get().strip().lower()
+        
+        if not selected_product:
+            print("\n[ERROR] Please select a product from the dropdown first.")
+            return
+
+        # 2. Run Algorithm
+        rules, _ = self.run_apriori(min_support_ratio=0.05, min_confidence=0.2)
+
+        if not rules:
+            print("\n[INFO] No rules generated. Try importing a larger CSV or lowering support.")
+            print(f"[DEBUG] Total transactions: {len(all_transactions)}")
+            return
+
+        # 3. Filter Rules and Keep Only the BEST rule for each consequent product
+        best_recommendations = {}  # Dictionary: product -> best_rule_data
+        
+        for rule in rules:
+            if selected_product in rule['antecedents']:
+                for assoc_prod in rule['consequents']:
+                    conf_val = rule['confidence'] * 100
+                    
+                    # If this product isn't in our dict yet, OR if this rule has better confidence
+                    if assoc_prod not in best_recommendations or conf_val > best_recommendations[assoc_prod]['conf']:
+                        # Visual Bar Logic for Terminal
+                        if conf_val >= 70:
+                            bar_visual = "#" * 10 + " (Strong)"
+                        elif conf_val >= 50:
+                            bar_visual = "#" * 6 + " (Moderate)"
+                        else:
+                            bar_visual = "#" * 4 + " (Weak)"
+                        
+                        best_recommendations[assoc_prod] = {
+                            'prod': assoc_prod.title(), 
+                            'conf': conf_val, 
+                            'conf_str': round(conf_val, 1),
+                            'bar': bar_visual,
+                            'support': rule['support'],
+                        }
+
+        # 4. Convert to list and Sort by confidence
+        recommendations = list(best_recommendations.values())
+        recommendations.sort(key=lambda x: x['conf'], reverse=True)
+
+        # 5. PRINT TO TERMINAL
+        print("\n" + "="*60)
+        print(f" RECOMMENDATION REPORT FOR: {selected_product.title()}")
+        print("="*60)
+        
+        if recommendations:
+            print(f"Customers who bought {selected_product.title()} also bought:\n")
+            for rec in recommendations:
+                print(f"- {rec['prod']:<15} {rec['conf_str']}% of the time  {rec['bar']}")
+            
+            print("-" * 60)
+            
+            # Business Logic
+            top_rec = recommendations[0]
+            if top_rec['conf'] >= 50:
+                print(f" Recommendation: Place {top_rec['prod']} near {selected_product.title()}.")
+                print(f" Bundle Idea: {selected_product.title()} + {top_rec['prod']}")
+            else:
+                print(f" Recommendation: Consider a discount on {top_rec['prod']} to drive sales.")
+           
+        else:
+            print("No significant associations found for this product.")
+            print(f"\n[DEBUG INFO]")
+            print(f"- Total rules generated: {len(rules)}")
+            print(f"- Looking for '{selected_product}' in antecedents")
+            
+            # Show what products ARE in the rules
+            all_antecedents = set()
+            for rule in rules:
+                all_antecedents.update(rule['antecedents'])
+            
+            if all_antecedents:
+                print(f"- Products with associations: {', '.join(sorted(all_antecedents))}")
+            else:
+                print("- No products have associations at current thresholds")
+        
+        print("="*60 + "\n")
     
 
 if __name__ == "__main__":
