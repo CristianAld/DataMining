@@ -85,8 +85,7 @@ Based on the analysis done and the test case used we are able to find that Aprio
 
 ```
 project-root/
-├── src/
-│   └── main.py
+├── main.py
 ├── data/
 │   ├── sample_transactions.csv
 │   └── products.csv
