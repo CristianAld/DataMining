@@ -3,7 +3,7 @@
 #### Author Information
 
 - **Name**: Cristian Aldana, Samuel Artiste
-- **Student ID**: 6426411, 
+- **Student ID**: 6426411, 6538723
 - **Course**: CAI 4002 - Artificial Intelligence
 - **Semester**: Fall 2025
 
@@ -11,28 +11,26 @@
 
 #### System Overview
 
-[2-3 sentences describing what your application does]
+This project is an interactive application that simulates a supermarket transaction system to perform Association Rule Mining on customer data. It integrates a data preprocessing pipeline with custom implementations of the Apriori and Eclat algorithms to discover and compare purchasing patterns. The tool features a user-friendly dashboard for generation transacations, visualizing algorithmic performs in the console, and querying product recommendations based on association strength.
 
 
 
 #### Technical Stack
 
 - **Language**: Python 3.0
-- **Key Libraries**: Pandas, psutil
+- **Key Libraries**: Pandas, psutil, itertools
 - **UI Framework**: Tkinter
 
 
 
 #### Installation
-You will need to install Pandas library and psutil libraries 
-pip install pandas
-pip install psutil
 
 ##### Prerequisites
 - Python 3
 
 ##### Setup
-No set up just run the main python file
+No set up, run the main python file
+
 # Clone or extract project
 (https://github.com/CristianAld/DataMining.git)
 
@@ -58,31 +56,16 @@ Run Main python file
 
 ##### 4. Query Results
 - Select product from dropdown
-- View associated items and recommendation strength
-- Optional: View technical details (raw rules, performance metrics)
+- View associated items and recommendation report strength
 
 
 #### Algorithm Implementation
 
 ##### Apriori
-[2-3 sentences on your implementation approach]
-- Data structure: [e.g., dictionary of itemsets]
-- Candidate generation: [breadth-first, level-wise]
-- Pruning strategy: [minimum support]
+The Apriori implementation utilizes a dictionary of TID-sets (vertical data encoding), instead of traditional horizontal, to allow for efficient support counting through set intersections rather than repeated database scans. The algorithm proceeds with a breadth-first, level-wise candidate generation strategy, iteratively building larger itemsets from valid smaller ones. The pruning strategy is based on a minimum support threshold, discarding infrequent itemsets at each level before proceeding.
 
 ##### Eclat
-[2-3 sentences on your implementation approach]
-- Data structure: [e.g., TID-set representation]
-- Search strategy: [depth-first]
-- Intersection method: [set operations]
-
-##### CLOSET
-[2-3 sentences on your implementation approach]
-- Data structure: [e.g., FP-tree / prefix tree]
-- Mining approach: [closed itemsets only]
-- Closure checking: [method used]
-
-
+The Eclat implementation uses a vertical TID-set representation, mapping each item directly to the set of transaction IDs in which it appears. It employs a depth first search strategy, recursively extending frequent itemsets to explore the search space. Support counting is performed through set intersection operations, allowing the algorithm to determine the support of candidate itemsets without scanning the entire database.
 
 #### Performance Results
 
@@ -103,21 +86,21 @@ Based on the analysis done and the test case used we are able to find that Aprio
 ```
 project-root/
 ├── src/
-│   └── main.[py/js/java]
+│   └── main.py
 ├── data/
 │   ├── sample_transactions.csv
 │   └── products.csv
 ├── README.md
 ├── REPORT.pdf
-
+```
 #### Data Preprocessing
 
 Issues handled:
-- Empty transactions: [count] removed
-- Single-item transactions: [count] removed
-- Duplicate items: [count] instances cleaned
-- Case inconsistencies: [count] standardized
-- Invalid items: [count] removed
+- Total transactions scanned: 100
+- Empty transactions: 5 removed
+- Single-item transactions: 6 removed
+- Duplicate items: 9 instances cleaned
+- Invalid items: 2 removed
 - Extra whitespace: trimmed from all items
 
 
@@ -132,30 +115,25 @@ Verified functionality:
 - [✓] Performance measurement
 
 Test cases:
-- [Describe 2-3 key test scenarios]
-The key test cases included single-item transactions and empty transactions 
+| Feature tested | Test Data input | Expected Outcome|
+|-----------|--------------|-----------------|
+| Case Inconsistency   | Milk, milk, BREAD     | Items are standardized to {'milk', 'bread'}           |
+| Duplicate Item counting     | T1: Bread, Milk, Milk       | Preprocessing Report: Duplicates detected: 1. Final transaction: {bread, milk}|
 
 
 #### Known Limitations
-
-[List any known issues or constraints, if applicable]
+Since the Apriori implementation is not library-optimized, generating candidates for every iteration can lead to significant memory use, especially with dense datasets or when the maximum frequent itemset size is large.
 
 
 
 #### AI Tool Usage
-
-[Required: 1 paragraph describing which AI tools you used and for what purpose]
-
-Example:
-
-"We used variety of AI tools, We allowed codex and ChatGPT to explain to us the process of the algorithms and create the algorithm functions, With Perplexity AI we used it to create the layout of Tkinter and explain basic GUI layout and how to expand it"
-
+During the implementation of this project, we relied on Gemini AI, primarily for coding assistance. We used it to help guide and explain functionalities like how to implement preprocessing for CSV standardization, and helping to walk through the complex logic and implementation of the Association rule mining algorithms. At first we prototyped by having Gemini generate HTML/ Javascript code for the initial interactive system, but ended up making the change to Tkinter. Github Copilot was also used to help during the implementation phase to help reduce and understand boilerplate code when writing the Tikinter UI and integrating the performance tracking. AI definitely helped us in the developing and debugging phase of the algorithms and assisting with general project documentation and allowed us to propel the development of this project.
 
 #### References
 
 - Course lecture materials
-- ChatGPT/Codex
-- Perplexity AI
+- Google Gemini AI
+- Copilot 
 - Pandas Doc
 - Tkinter Doc
 - psutil Doc
