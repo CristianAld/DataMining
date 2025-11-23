@@ -19,7 +19,7 @@ all_transactions = []
 current_basket = []
 transaction_id_counter = 1
 
-PRODUCTS_INVENTORY_FILE = 'products.csv'
+PRODUCTS_INVENTORY_FILE = 'data/products.csv'
 
 class SupermarketApp:
     def __init__(self, master):
